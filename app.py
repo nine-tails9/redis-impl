@@ -1,14 +1,14 @@
-
 from flask import Flask, render_template, request, jsonify
 from flask_sqlalchemy import SQLAlchemy  # add
 from datetime import datetime, timedelta
 from sortedcontainers import SortedDict
+
 app = Flask(__name__)
 
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///test.db'  # add
 db = SQLAlchemy(app)
 
-
+# model
 class redis(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     key = db.Column(db.String(80), nullable=False)
@@ -18,9 +18,12 @@ class redis(db.Model):
                        default=timedelta(hours=9999) + datetime.utcnow())
     created_at = db.Column(db.DateTime, nullable=False,
                            default=datetime.utcnow())
+
     def as_dict(self):
         return {c.name: getattr(self, c.name) for c in self.__table__.columns}
 
+
+# memcache
 
 class cached_db(dict):
 
@@ -55,7 +58,7 @@ class sorted_cached_db:
     def if_exists(self, key):
         return key in self.sorted_map
 
-    def add_key(self, key, value):
+    def add(self, key, value):
         self.sorted_map[key] = value
 
     def delete(self, key):
@@ -77,12 +80,7 @@ class sorted_cached_db:
         end = (n + end) % n + 1
         return jsonify([self.sorted_map[key]['value'] for key in self.sorted_map.islice(start, end)])
 
-
-
-cache = cached_db()
-
-sorted_cache = sorted_cached_db()
-
+# routes
 
 @app.route('/')
 def index():
@@ -133,20 +131,17 @@ def set_key_expiry():
     return "expiry set"
 
 
-
 @app.route('/zadd', methods=['POST'])
 def zadd_key_value():
     req = request.get_json()
     key = req['key']
     value = req['value']
     obj = redis(key=key, value=value, type="sorted")
-    try:
-        db.session.add(obj)
-        db.session.commit()
-        sorted_cache.add(key, obj.as_dict())
-        return "saved"
-    except:
-        return "There was a problem adding key"
+    db.session.add(obj)
+    db.session.commit()
+    sorted_cache.add(key, obj.as_dict())
+    return "saved"
+
 
 
 @app.route('/zrank', methods=['GET'])
@@ -159,9 +154,12 @@ def get_key_rank():
 def get_key_range():
     start = request.args.get('start')
     end = request.args.get('end')
-    return sorted_cache.get_range(int(start),int(end))
+    return sorted_cache.get_range(int(start), int(end))
 
+#################################################################
 
+cache = cached_db()
+sorted_cache = sorted_cached_db()
 
 def init():
     rows = redis.query.all()
@@ -170,7 +168,8 @@ def init():
         if key_value.as_dict()['type'] == "unsorted":
             cache.add(key_value.as_dict()['key'], key_value.as_dict())
         else:
-            sorted_cache.add_key(key_value.as_dict()['key'], key_value.as_dict())
+            sorted_cache.add(key_value.as_dict()['key'], key_value.as_dict())
+
 
 init()
 
