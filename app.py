@@ -1,7 +1,7 @@
 
 from flask import Flask, render_template, request, jsonify
 from flask_sqlalchemy import SQLAlchemy  # add
-from datetime import datetime
+from datetime import datetime, timedelta
 from sortedcontainers import SortedDict
 app = Flask(__name__)
 
@@ -15,9 +15,9 @@ class redis(db.Model):
     value = db.Column(db.String(80), nullable=False)
     type = db.Column(db.String(80), nullable=False)
     expiry = db.Column(db.DateTime, nullable=False,
-                       default=datetime.utcnow)
+                       default=timedelta(hours=9999) + datetime.utcnow())
     created_at = db.Column(db.DateTime, nullable=False,
-                           default=datetime.utcnow)
+                           default=datetime.utcnow())
     def as_dict(self):
         return {c.name: getattr(self, c.name) for c in self.__table__.columns}
 
@@ -28,7 +28,7 @@ class cached_db(dict):
         self = dict()
 
     def if_exists(self, key):
-        return key in self
+        return key in self and self[key]['expiry'] >= datetime.utcnow()
 
     def add(self, key, value):
         self[key] = value
@@ -119,6 +119,21 @@ def delete_key_value():
     return cache.delete(req)
 
 
+@app.route('/set-expiry', methods=['POST'])
+def set_key_expiry():
+    req = request.get_json()
+    key = req['key']
+    expiry = int(req['expiry'])
+    if not cache.if_exists(key):
+        return "key not present"
+    obj = redis.query.filter_by(key=key).first()
+    obj.expiry = timedelta(seconds=expiry) + datetime.utcnow()
+    db.session.commit()
+    cache.add(key, obj.as_dict())
+    return "expiry set"
+
+
+
 @app.route('/zadd', methods=['POST'])
 def zadd_key_value():
     req = request.get_json()
@@ -149,8 +164,8 @@ def get_key_range():
 
 
 def init():
-    hash_map = redis.query.all()
-    for key_value in hash_map:
+    rows = redis.query.all()
+    for key_value in rows:
         print(key_value.as_dict())
         if key_value.as_dict()['type'] == "unsorted":
             cache.add(key_value.as_dict()['key'], key_value.as_dict())
