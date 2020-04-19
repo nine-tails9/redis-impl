@@ -31,6 +31,8 @@ class cached_db(dict):
         self = dict()
 
     def if_exists(self, key):
+        if self[key]['expiry'] < datetime.utcnow():
+            self.delete(key)
         return key in self and self[key]['expiry'] >= datetime.utcnow()
 
     def add(self, key, value):
