@@ -74,7 +74,7 @@ class sorted_cached_db:
     def find_rank(self, key):
         if not self.if_exists(key):
             return "does'not exists"
-        return jsonify(self.sorted_map.keys()[:])
+        return jsonify(self.sorted_map.index(key))
 
     def get_range(self, start, end):
         n = len(self.sorted_map)
